@@ -22,6 +22,7 @@ import { renderSocial } from './views/social.js'
 import { renderEvents } from './views/events.js'
 import { renderReports } from './views/reports.js'
 import { renderAnalytics } from './views/analytics.js'
+import { renderIdeas } from './views/ideas.js'
 import { renderLogin, getCurrentUser, logout } from './views/login.js'
 import { initAssistant } from './views/assistant.js'
 
@@ -38,6 +39,7 @@ const NAV = [
     { id: 'crm', label: 'CRM', icon: Icon.crm(18) },
     { id: 'invoices', label: 'Facturation', icon: Icon.file(18) },
     { id: 'finance', label: 'Finance', icon: Icon.finance(18) },
+    { id: 'ideas', label: 'Idées', icon: Icon.briefcase(18) },
   ]},
   { section: 'Collaboration', items: [
     { id: 'team', label: 'Équipe', icon: Icon.team(18) },
@@ -73,6 +75,7 @@ const VIEWS = {
   events: renderEvents,
   reports: renderReports,
   analytics: renderAnalytics,
+  ideas: renderIdeas,
   clients: renderClients,
   crm: renderCRM,
   finance: renderFinance,
