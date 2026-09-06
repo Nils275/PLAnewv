@@ -23,6 +23,8 @@ import { renderEvents } from './views/events.js'
 import { renderReports } from './views/reports.js'
 import { renderAnalytics } from './views/analytics.js'
 import { renderIdeas } from './views/ideas.js'
+import { renderHR } from './views/hr.js'
+import { renderAutomations } from './views/automations.js'
 import { renderLogin, getCurrentUser, logout } from './views/login.js'
 import { initAssistant } from './views/assistant.js'
 
@@ -43,9 +45,13 @@ const NAV = [
   ]},
   { section: 'Collaboration', items: [
     { id: 'team', label: 'Équipe', icon: Icon.team(18) },
+    { id: 'hr', label: 'Ressources humaines', icon: Icon.users(18) },
     { id: 'chat', label: 'Discussions', icon: Icon.chat(18) },
     { id: 'communication', label: 'Communication', icon: Icon.chat(18) },
     { id: 'documents', label: 'Documents', icon: Icon.briefcase(18) },
+  ]},
+  { section: 'Automatisation', items: [
+    { id: 'automations', label: 'Automatisations', icon: Icon.bell(18) },
   ]},
   { section: 'Création', items: [
     { id: 'social', label: 'Calendrier éditorial', icon: Icon.image(18) },
@@ -86,6 +92,8 @@ const VIEWS = {
   templates: renderTemplates,
   press: renderPress,
   settings: renderSettings,
+  hr: renderHR,
+  automations: renderAutomations,
 }
 
 function shellHTML(user) {

@@ -2,6 +2,7 @@ import { supabase } from '../supabase.js'
 import { Icon } from '../icons.js'
 import { toast, navigate } from '../router.js'
 import { getCurrentUser } from './login.js'
+import { getRecentActivity, timeAgo } from '../activity.js'
 
 const fmt = (n) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(n || 0)
 
@@ -13,7 +14,7 @@ function isThisMonth(d, now) {
 export async function renderDashboard(content) {
   content.innerHTML = `<div class="spinner"></div>`
 
-  const [tasks, projects, deals, tx, team, forecasts, timeEntries, invoices, payments] = await Promise.all([
+  const [tasks, projects, deals, tx, team, forecasts, timeEntries, invoices, payments, communications, activity] = await Promise.all([
     supabase.from('tasks').select('*'),
     supabase.from('projects').select('*'),
     supabase.from('crm_deals').select('*'),
@@ -23,6 +24,8 @@ export async function renderDashboard(content) {
     supabase.from('time_entries').select('*'),
     supabase.from('invoices').select('*'),
     supabase.from('payments').select('*'),
+    supabase.from('communications').select('*'),
+    getRecentActivity(15),
   ])
 
   const t = tasks.data || []
@@ -33,6 +36,8 @@ export async function renderDashboard(content) {
   const te = timeEntries.data || []
   const inv = invoices.data || []
   const user = getCurrentUser()
+  const comm = communications.data || []
+  const activityItems = activity || []
 
   const myTasks = user ? t.filter((k) => (k.assignee || '').toLowerCase().startsWith(user.name.toLowerCase())) : []
   const myDone = myTasks.filter((k) => k.status === 'done').length
@@ -113,6 +118,50 @@ export async function renderDashboard(content) {
         <button class="quick-action" data-quick-route="clients"><span class="quick-action-icon">${Icon.users(18)}</span><span><strong>Nouveau client</strong><small>Ajouter un contact</small></span><span class="quick-action-arrow">→</span></button>
         <button class="quick-action" data-quick-route="projects"><span class="quick-action-icon">${Icon.projects(18)}</span><span><strong>Nouveau projet</strong><small>Lancer une mission</small></span><span class="quick-action-arrow">→</span></button>
         <button class="quick-action" data-quick-route="invoices"><span class="quick-action-icon">${Icon.file(18)}</span><span><strong>Créer une facture</strong><small>Suivre la facturation</small></span><span class="quick-action-arrow">→</span></button>
+      </div>
+    </div>
+
+    <div class="grid grid-2" style="margin-bottom:18px">
+      <div class="card">
+        <div class="card-head"><div class="card-title">Aujourd'hui</div><span class="badge badge-neutral">${new Date().toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' })}</span></div>
+        <div class="card-pad" style="display:flex;flex-direction:column;gap:12px">
+          ${todaySummaryRow('Tâches', t.filter((k) => k.status !== 'done').length, Icon.tasks(16), 'tasks', 'var(--primary)')}
+          ${todaySummaryRow('Rendez-vous', comm.filter((c) => c.type === 'meeting' && c.date && new Date(c.date).toDateString() === new Date().toDateString()).length, Icon.calendar(16), 'communication', 'var(--accent)')}
+          ${todaySummaryRow('Relances', comm.filter((c) => c.status === 'follow-up').length, Icon.bell(16), 'communication', 'var(--warning)')}
+          ${todaySummaryRow('Factures en retard', inv.filter((i) => i.type !== 'quote' && i.status === 'overdue').length, Icon.file(16), 'invoices', 'var(--danger)')}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title">Commercial</div><span class="badge badge-primary">${d.length} opportunités</span></div>
+        <div class="card-pad" style="display:flex;flex-direction:column;gap:12px">
+          ${todaySummaryRow('Prospects', d.filter((k) => k.stage === 'prospect').length, Icon.users(16), 'crm', 'var(--primary)')}
+          ${todaySummaryRow('Opportunités', d.filter((k) => k.stage !== 'prospect' && k.stage !== 'signed' && k.stage !== 'lost').length, Icon.crm(16), 'crm', 'var(--accent)')}
+          ${todaySummaryRow('Devis en cours', inv.filter((i) => i.type === 'quote' && (i.status === 'sent' || i.status === 'draft')).length, Icon.file(16), 'invoices', 'var(--warning)')}
+          ${todaySummaryRow('Ventes gagnées', d.filter((k) => k.stage === 'signed').length, Icon.trend(16), 'crm', 'var(--success)')}
+          <div style="display:flex;justify-content:space-between;align-items:center;padding-top:10px;border-top:1px solid var(--border)">
+            <span style="font-size:13px;font-weight:600;color:var(--text-2)">CA potentiel</span>
+            <strong style="font-size:16px;color:var(--success)">${fmt(d.filter((k) => k.stage !== 'lost').reduce((s, k) => s + Number(k.value), 0))}</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-head">
+        <div class="card-title">Récemment</div>
+        <span class="badge badge-neutral">${activityItems.length} activité${activityItems.length === 1 ? '' : 's'}</span>
+      </div>
+      <div style="padding:8px">
+        ${activityItems.length ? activityItems.map((a) => `
+          <div class="activity-item" data-route="${a.route || ''}" style="padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:${a.route ? 'pointer' : 'default'};transition:background .15s" ${a.route ? `onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background=''"` : ''}>
+            <div class="avatar sm" style="background:${avatarColor(a.user_name || 'sys')};width:30px;height:30px;font-size:11px">${(a.user_name || 'S')[0].toUpperCase()}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:500">${escape(a.description)}</div>
+              <div style="font-size:11px;color:var(--text-3)">${escape(a.user_name || 'Système')} · ${timeAgo(a.created_at)}</div>
+            </div>
+            <span class="badge badge-neutral" style="font-size:10px">${escape(a.entity_type)}</span>
+            ${a.route ? `<span style="color:var(--text-3);font-size:14px">→</span>` : ''}
+          </div>`).join('') : '<div class="empty">Aucune activité récente</div>'}
       </div>
     </div>
 
@@ -271,6 +320,18 @@ export async function renderDashboard(content) {
   content.querySelectorAll('[data-quick-route]').forEach((button) => {
     button.onclick = () => navigate(button.dataset.quickRoute)
   })
+  content.querySelectorAll('.activity-item[data-route]').forEach((item) => {
+    if (item.dataset.route) item.onclick = () => navigate(item.dataset.route)
+  })
+}
+
+function todaySummaryRow(label, value, icon, route, color) {
+  return `
+    <div style="display:flex;align-items:center;gap:10px;cursor:pointer" onclick="navigate('${route}')">
+      <div style="width:32px;height:32px;border-radius:8px;background:${color}20;color:${color};display:grid;place-items:center;flex-shrink:0">${icon}</div>
+      <span style="flex:1;font-size:13px;color:var(--text-2)">${label}</span>
+      <strong style="font-size:16px;font-weight:700;color:${color}">${value}</strong>
+    </div>`
 }
 
 function kpiCard(label, value, delta, dir, icon, tint) {
