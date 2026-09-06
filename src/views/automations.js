@@ -2,6 +2,8 @@ import { supabase } from '../supabase.js'
 import { Icon } from '../icons.js'
 import { modal, confirmDialog, toast } from '../router.js'
 import { escape } from './dashboard.js'
+import { logActivity } from '../activity.js'
+import { getCurrentUser } from './login.js'
 
 const TRIGGERS = [
   { value: 'deal_no_response', label: 'Un prospect reste sans réponse', desc: 'Délai en jours sans réponse' },
@@ -63,7 +65,8 @@ export async function renderAutomations(content) {
 
   content.querySelector('#add-auto').onclick = () => openAutoModal(() => renderAutomations(content))
   content.querySelectorAll('.toggle-auto').forEach((b) => b.onclick = async () => {
-    await supabase.from('automations').update({ enabled: !b.dataset.enabled === 'true' }).eq('id', b.dataset.id)
+    const current = b.dataset.enabled === 'true'
+    await supabase.from('automations').update({ enabled: !current }).eq('id', b.dataset.id)
     renderAutomations(content)
   })
   content.querySelectorAll('.edit-auto').forEach((b) => b.onclick = () => {
@@ -77,10 +80,68 @@ export async function renderAutomations(content) {
     renderAutomations(content)
   })
   content.querySelectorAll('.run-auto').forEach((b) => b.onclick = async () => {
-    await supabase.from('automations').update({ last_run: new Date().toISOString(), run_count: ((autos.find((x) => x.id === b.dataset.id)?.run_count) || 0) + 1 }).eq('id', b.dataset.id)
-    toast('Automatisation exécutée manuellement', 'success')
+    const auto = autos.find((x) => x.id === b.dataset.id)
+    if (!auto) return
+    const result = await executeAutomation(auto)
+    if (result.ok) {
+      await supabase.from('automations').update({ last_run: new Date().toISOString(), run_count: (auto.run_count || 0) + 1 }).eq('id', auto.id)
+      toast(result.message || 'Automatisation exécutée', 'success')
+      await logActivity('automation', auto.id, 'executed', `Règle "${auto.name}" exécutée`, '')
+    } else {
+      toast(result.message || 'Erreur lors de l\'exécution', 'error')
+    }
     renderAutomations(content)
   })
+}
+
+async function executeAutomation(auto) {
+  const tc = typeof auto.trigger_config === 'string' ? JSON.parse(auto.trigger_config) : (auto.trigger_config || {})
+  const ac = typeof auto.action_config === 'string' ? JSON.parse(auto.action_config) : (auto.action_config || {})
+  const user = getCurrentUser()
+
+  try {
+    if (auto.action_type === 'create_task' || auto.action_type === 'create_reminder') {
+      const title = ac.title || 'Tâche automatique'
+      const { data: taskData } = await supabase.from('tasks').insert({
+        title,
+        status: 'todo',
+        priority: auto.action_type === 'create_reminder' ? 'high' : 'medium',
+        due_date: tc.days ? new Date(Date.now() + tc.days * 86400000).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+      }).select('id').single()
+      await logActivity('task', taskData?.id || '', 'created', `Tâche créée automatiquement: "${title}"`, 'tasks')
+      return { ok: true, message: `Tâche créée: "${title}"` }
+
+    } else if (auto.action_type === 'create_project') {
+      const name = ac.title || 'Projet automatique'
+      const { data: projData } = await supabase.from('projects').insert({
+        name,
+        status: 'planning',
+        progress: 0,
+      }).select('id').single()
+      await logActivity('project', projData?.id || '', 'created', `Projet créé automatiquement: "${name}"`, 'projects')
+      return { ok: true, message: `Projet créé: "${name}"` }
+
+    } else if (auto.action_type === 'create_invoice') {
+      const number = `AUTO-${Date.now().toString().slice(-6)}`
+      const { data: invData } = await supabase.from('invoices').insert({
+        number,
+        type: 'invoice',
+        status: 'draft',
+        total: 0,
+        date: new Date().toISOString().slice(0, 10),
+      }).select('id').single()
+      await logActivity('invoice', invData?.id || '', 'created', `Facture générée automatiquement: ${number}`, 'invoices')
+      return { ok: true, message: `Facture générée: ${number}` }
+
+    } else if (auto.action_type === 'send_notification') {
+      const msg = ac.message || 'Notification automatique'
+      await logActivity('notification', '', 'sent', `Notification: "${msg}"`, '')
+      return { ok: true, message: `Notification envoyée: "${msg}"` }
+    }
+    return { ok: false, message: 'Action non reconnue' }
+  } catch (e) {
+    return { ok: false, message: `Erreur: ${e.message}` }
+  }
 }
 
 function automationCard(a) {

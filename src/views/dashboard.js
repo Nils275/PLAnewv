@@ -323,14 +323,18 @@ export async function renderDashboard(content) {
   content.querySelectorAll('.activity-item[data-route]').forEach((item) => {
     if (item.dataset.route) item.onclick = () => navigate(item.dataset.route)
   })
+  content.querySelectorAll('[data-today-route]').forEach((row) => {
+    row.onclick = () => navigate(row.dataset.todayRoute)
+  })
 }
 
 function todaySummaryRow(label, value, icon, route, color) {
   return `
-    <div style="display:flex;align-items:center;gap:10px;cursor:pointer" onclick="navigate('${route}')">
+    <div class="today-row" data-today-route="${route}" style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:6px 8px;border-radius:8px;transition:background .15s" onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background=''">
       <div style="width:32px;height:32px;border-radius:8px;background:${color}20;color:${color};display:grid;place-items:center;flex-shrink:0">${icon}</div>
       <span style="flex:1;font-size:13px;color:var(--text-2)">${label}</span>
       <strong style="font-size:16px;font-weight:700;color:${color}">${value}</strong>
+      <span style="color:var(--text-3);font-size:14px">→</span>
     </div>`
 }
 

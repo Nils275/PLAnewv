@@ -25,6 +25,7 @@ import { renderAnalytics } from './views/analytics.js'
 import { renderIdeas } from './views/ideas.js'
 import { renderHR } from './views/hr.js'
 import { renderAutomations } from './views/automations.js'
+import { getRecentActivity, timeAgo } from './activity.js'
 import { renderLogin, getCurrentUser, logout } from './views/login.js'
 import { initAssistant } from './views/assistant.js'
 
@@ -111,6 +112,7 @@ function shellHTML(user) {
             <button class="nav-item" data-route="${i.id}">
               <span class="nav-ico">${i.icon}</span>
               <span>${i.label}</span>
+              <span class="nav-badge" data-nav-badge="${i.id}" style="display:none"></span>
             </button>`).join('')}
         `).join('')}
       </nav>
@@ -221,10 +223,11 @@ function updateThemeIcon() {
 
 async function setupNotifications() {
   const bell = document.getElementById('bell-btn')
-  const [tasks, invoices, events] = await Promise.all([
-    supabase.from('tasks').select('title,due_date').neq('status', 'done').not('due_date', 'is', null),
-    supabase.from('invoices').select('number,total').eq('status', 'overdue'),
-    supabase.from('sport_events').select('name,start_date').eq('status', 'upcoming').order('start_date', { ascending: true }).limit(3),
+  const [tasks, invoices, events, activity] = await Promise.all([
+    supabase.from('tasks').select('id,title,due_date').neq('status', 'done').not('due_date', 'is', null),
+    supabase.from('invoices').select('id,number,total').eq('status', 'overdue'),
+    supabase.from('sport_events').select('id,name,start_date').eq('status', 'upcoming').order('start_date', { ascending: true }).limit(3),
+    getRecentActivity(8),
   ])
   const today = new Date().toISOString().slice(0, 10)
   const overdueTasks = (tasks.data || []).filter((task) => task.due_date < today)
@@ -232,29 +235,63 @@ async function setupNotifications() {
     ...overdueTasks.map((task) => ({ type: 'danger', title: 'Tâche en retard', text: task.title, route: 'tasks' })),
     ...(invoices.data || []).map((invoice) => ({ type: 'warning', title: 'Facture impayée', text: `${invoice.number} · ${Number(invoice.total || 0).toLocaleString('fr-FR')} €`, route: 'invoices' })),
     ...(events.data || []).map((event) => ({ type: 'info', title: 'Événement à venir', text: `${event.name} · ${new Date(event.start_date).toLocaleDateString('fr-FR')}`, route: 'events' })),
+    ...(activity || []).slice(0, 5).map((a) => ({ type: 'activity', title: a.user_name || 'Système', text: a.description, route: a.route || '' })),
   ]
   const dot = bell.querySelector('.dot')
   if (dot) dot.style.display = items.length ? 'block' : 'none'
   bell.onclick = () => showNotifications(items)
+
+  // Update nav badges
+  updateNavBadges({
+    tasks: overdueTasks.length,
+    invoices: (invoices.data || []).length,
+    events: (events.data || []).length,
+  })
+}
+
+function updateNavBadges(counts) {
+  const badges = document.querySelectorAll('[data-nav-badge]')
+  badges.forEach((badge) => {
+    const route = badge.dataset.navBadge
+    const count = counts[route] || 0
+    if (count > 0) {
+      badge.textContent = count
+      badge.style.display = 'inline-flex'
+    } else {
+      badge.style.display = 'none'
+    }
+  })
 }
 
 function showNotifications(items) {
   document.querySelector('.notification-popover')?.remove()
   const popover = document.createElement('div')
   popover.className = 'notification-popover'
+  const alertItems = items.filter((i) => i.type !== 'activity')
+  const activityItems = items.filter((i) => i.type === 'activity')
   popover.innerHTML = `
-    <div class="notification-head"><strong>Notifications</strong><span>${items.length} alerte${items.length === 1 ? '' : 's'}</span></div>
-    <div class="notification-list">${items.length ? items.map((item, index) => `
-      <button class="notification-item ${item.type}" data-route="${item.route}" data-index="${index}">
-        <span class="notification-mark"></span><span><strong>${escape(item.title)}</strong><small>${escape(item.text)}</small></span>
-      </button>`).join('') : '<div class="notification-empty">Tout est à jour</div>'}</div>`
+    <div class="notification-head"><strong>Notifications</strong><span>${alertItems.length} alerte${alertItems.length === 1 ? '' : 's'}</span></div>
+    <div class="notification-list">
+      ${alertItems.length ? alertItems.map((item, index) => `
+        <button class="notification-item ${item.type}" data-route="${item.route}" data-index="${index}">
+          <span class="notification-mark"></span><span><strong>${escape(item.title)}</strong><small>${escape(item.text)}</small></span>
+        </button>`).join('') : '<div class="notification-empty">Aucune alerte</div>'}
+      ${activityItems.length ? `
+        <div class="notification-section-title">Activité récente</div>
+        ${activityItems.map((item) => `
+          <button class="notification-item activity" data-route="${item.route || ''}">
+            <span class="notification-mark" style="background:var(--primary)"></span>
+            <span><strong>${escape(item.title)}</strong><small>${escape(item.text)}</small></span>
+          </button>`).join('')}
+      ` : ''}
+    </div>`
   document.body.appendChild(popover)
   const bell = document.getElementById('bell-btn')
   const rect = bell.getBoundingClientRect()
   popover.style.top = `${rect.bottom + 8}px`
   popover.style.right = `${Math.max(16, window.innerWidth - rect.right)}px`
   popover.querySelectorAll('.notification-item').forEach((item) => item.onclick = () => {
-    navigate(item.dataset.route)
+    if (item.dataset.route) navigate(item.dataset.route)
     popover.remove()
   })
   setTimeout(() => document.addEventListener('click', function close(e) {
