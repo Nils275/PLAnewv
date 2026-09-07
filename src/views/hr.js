@@ -15,7 +15,18 @@ const LEAVE_STATUS = ['pending', 'approved', 'rejected']
 const DEPARTMENTS = ['Direction', 'Commercial', 'Création', 'Technique', 'Administration', 'Communication']
 const ROLES = ['Manager', 'Salarié', 'Freelance', 'Stagiaire', 'Alternant']
 
+function isAdmin(user) {
+  return user && user.role === 'admin'
+}
+
 export async function renderHR(content) {
+  const user = getCurrentUser()
+
+  if (!isAdmin(user)) {
+    renderHRLimited(content, user)
+    return
+  }
+
   content.innerHTML = `<div class="spinner"></div>`
 
   const [members, leaves, objectives, onboarding] = await Promise.all([
@@ -40,7 +51,7 @@ export async function renderHR(content) {
     <div class="page-head">
       <div>
         <div class="page-title">Gestion des employés / RH</div>
-        <div class="page-sub">Annuaire, congés, objectifs, onboarding</div>
+        <div class="page-sub">Espace privé — Julien & Nils uniquement</div>
       </div>
       <button class="btn btn-primary" id="add-member">${Icon.users(16)} Ajouter un collaborateur</button>
     </div>
@@ -73,6 +84,63 @@ export async function renderHR(content) {
   renderTab('directory', tabContent, m, lv, ob, onb)
 
   content.querySelector('#add-member').onclick = () => openMemberModal(m, () => renderHR(content))
+}
+
+// Limited view for non-admin users: only see their own leave requests
+function renderHRLimited(content, user) {
+  content.innerHTML = `<div class="spinner"></div>`
+
+  supabase
+    .from('team_members')
+    .select('*')
+    .order('first_name')
+    .then(({ data: members }) => {
+      const me = (members || []).find((m) => m.first_name.toLowerCase() === user.name.toLowerCase())
+
+      content.innerHTML = `
+        <div class="page-head">
+          <div>
+            <div class="page-title">Mes congés & absences</div>
+            <div class="page-sub">Demandez un congé, suivez ses statuts</div>
+          </div>
+          <button class="btn btn-primary" id="add-leave">${Icon.calendar(16)} Demander un congé</button>
+        </div>
+        <div id="my-leaves-list"></div>
+      `
+
+      loadMyLeaves(content, me)
+      content.querySelector('#add-leave').onclick = () => openLeaveModal(members || [], () => renderHR(content), me)
+    })
+}
+
+async function loadMyLeaves(content, me) {
+  const list = content.querySelector('#my-leaves-list')
+  if (!me) {
+    list.innerHTML = '<div class="empty">Votre profil n\'est pas encore dans l\'annuaire. Contactez un administrateur.</div>'
+    return
+  }
+  const { data: leaves } = await supabase
+    .from('hr_leaves')
+    .select('*')
+    .eq('member_id', me.id)
+    .order('created_at', { ascending: false })
+
+  list.innerHTML = `
+    <div class="card">
+      <table class="table">
+        <thead><tr><th>Type</th><th>Début</th><th>Fin</th><th>Statut</th><th>Motif</th></tr></thead>
+        <tbody>
+          ${(leaves || []).map((l) => `
+            <tr>
+              <td><span class="badge ${l.type === 'sick' ? 'badge-danger' : l.type === 'telework' ? 'badge-primary' : 'badge-neutral'}">${leaveLabel(l.type)}</span></td>
+              <td>${new Date(l.start_date).toLocaleDateString('fr-FR')}</td>
+              <td>${new Date(l.end_date).toLocaleDateString('fr-FR')}</td>
+              <td><span class="badge ${l.status === 'approved' ? 'badge-success' : l.status === 'rejected' ? 'badge-danger' : 'badge-warning'}">${leaveLabelStatus(l.status)}</span></td>
+              <td>${escape(l.reason || '—')}</td>
+            </tr>`).join('') || '<tr><td colspan="5" class="empty">Aucune demande</td></tr>'}
+        </tbody>
+      </table>
+    </div>`
 }
 
 function renderTab(tab, el, members, leaves, objectives, onboarding) {
@@ -135,7 +203,7 @@ function renderLeaves(el, leaves, members) {
               <td><span class="badge ${l.type === 'sick' ? 'badge-danger' : l.type === 'telework' ? 'badge-primary' : 'badge-neutral'}">${leaveLabel(l.type)}</span></td>
               <td>${new Date(l.start_date).toLocaleDateString('fr-FR')}</td>
               <td>${new Date(l.end_date).toLocaleDateString('fr-FR')}</td>
-              <td><span class="badge ${l.status === 'approved' ? 'badge-success' : l.status === 'rejected' ? 'badge-danger' : 'badge-warning'}">${l.status}</span></td>
+              <td><span class="badge ${l.status === 'approved' ? 'badge-success' : l.status === 'rejected' ? 'badge-danger' : 'badge-warning'}">${leaveLabelStatus(l.status)}</span></td>
               <td>${escape(l.reason || '—')}</td>
               <td>
                 ${l.status === 'pending' ? `<button class="btn btn-sm approve-leave" data-id="${l.id}">Approuver</button> <button class="btn btn-sm btn-danger reject-leave" data-id="${l.id}">Refuser</button>` : ''}
@@ -317,11 +385,11 @@ function openProfileModal(member) {
   }, null, { noFooter: true })
 }
 
-function openLeaveModal(members, onDone) {
+function openLeaveModal(members, onDone, presetMember) {
   modal('Demander un congé', (body) => {
     body.innerHTML = `
       <div class="field"><label>Collaborateur</label>
-        <select id="l-member">${members.map((m) => `<option value="${m.id}">${escape(m.first_name)} ${escape(m.last_name)}</option>`).join('')}</select>
+        <select id="l-member">${members.map((m) => `<option value="${m.id}" ${presetMember?.id === m.id ? 'selected' : ''}>${escape(m.first_name)} ${escape(m.last_name)}</option>`).join('')}</select>
       </div>
       <div class="field"><label>Type</label>
         <select id="l-type">${LEAVE_TYPES.map((t) => `<option value="${t.value}">${t.label}</option>`).join('')}</select>
@@ -412,6 +480,11 @@ function openOnboardingModal(members, onDone) {
 
 function leaveLabel(type) {
   return LEAVE_TYPES.find((t) => t.value === type)?.label || type
+}
+
+function leaveLabelStatus(status) {
+  const map = { pending: 'En attente', approved: 'Approuvé', rejected: 'Refusé' }
+  return map[status] || status
 }
 
 function kpiBox(label, value, icon, tint) {
