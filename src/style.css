@@ -729,10 +729,23 @@ a { color: inherit; text-decoration: none; }
 }
 .brain-chip:hover { border-color: var(--chip-color, var(--primary)); background: color-mix(in srgb, var(--chip-color, var(--primary)) 8%, transparent); }
 
-.brain-graph-wrap { position: relative; overflow: hidden; }
-.brain-node circle { transition: opacity .2s, r .2s; }
+.brain-graph-wrap { position: relative; overflow: hidden; transition: background .3s; }
+.brain-graph-card { border: none; }
+
+.brain-node { transition: filter .15s; }
+.brain-node circle { transition: opacity .15s; }
 .brain-node:hover circle:first-child { opacity: .25; }
-.brain-node:hover circle:nth-child(2) { opacity: 1; }
+.brain-node:hover circle:nth-child(2) { opacity: 1; filter: drop-shadow(0 0 6px #e8392e88); }
+.brain-node:active { cursor: grabbing; }
+
+.brain-graph-legend {
+  position: absolute; bottom: 12px; right: 14px;
+  display: flex; gap: 16px; align-items: center;
+  font-size: 11px; color: rgba(255,255,255,.5);
+  background: rgba(0,0,0,.3); padding: 6px 12px; border-radius: 8px;
+  pointer-events: none; backdrop-filter: blur(4px);
+}
+[data-theme="light"] .brain-graph-legend { color: var(--text-3); background: rgba(255,255,255,.7); }
 
 .brain-note-content { font-size: 14px; line-height: 1.7; color: var(--text-2); }
 .brain-wikilink {

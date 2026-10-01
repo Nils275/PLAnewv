@@ -4,12 +4,26 @@ import { modal, confirmDialog, toast } from '../router.js'
 import { escape } from './dashboard.js'
 
 let currentView = 'graph'
-let selectedNoteId = null
 let searchQuery = ''
 let activeTag = null
 
+let simNodes = []
+let simLinks = []
+let simRAF = null
+let simRunning = false
+let simDragNode = null
+let simDragOffset = { x: 0, y: 0 }
+let simContent = null
+let simAllNotes = []
+
+const NODE_RED = '#e8392e'
+const LINK_BLUE = '#3b5bdb'
+const GRAPH_BG = '#1a1b26'
+const GRAPH_BG_LIGHT = '#f5f5fa'
+
 export async function renderBrain(content) {
   content.innerHTML = `<div class="spinner"></div>`
+  stopSim()
   const { data: notes } = await supabase.from('brain_notes').select('*').order('updated_at', { ascending: false })
   const allNotes = notes || []
   drawView(content, allNotes)
@@ -46,12 +60,16 @@ function drawView(content, notes) {
     </div>
 
     <div id="brain-content">
-      ${currentView === 'graph' ? drawGraph(filtered, notes) : drawList(filtered, notes)}
+      ${currentView === 'graph' ? drawGraphHTML(filtered, notes) : drawList(filtered, notes)}
     </div>
   `
 
   content.querySelector('#add-note').onclick = () => openNoteForm(content, notes, null)
-  content.querySelectorAll('[data-view]').forEach((b) => b.onclick = () => { currentView = b.dataset.view; drawView(content, notes) })
+  content.querySelectorAll('[data-view]').forEach((b) => b.onclick = () => {
+    currentView = b.dataset.view
+    if (currentView !== 'graph') stopSim()
+    drawView(content, notes)
+  })
 
   const searchInput = content.querySelector('#brain-search')
   searchInput.oninput = () => { searchQuery = searchInput.value; drawView(content, notes) }
@@ -65,6 +83,10 @@ function drawView(content, notes) {
     const note = notes.find((n) => n.id === el.dataset.noteId)
     if (note) openNoteDetail(content, notes, note)
   })
+
+  if (currentView === 'graph') {
+    initSim(content, filtered, notes)
+  }
 }
 
 function drawList(notes, allNotes) {
@@ -79,7 +101,7 @@ function drawList(notes, allNotes) {
           <div class="card brain-card" data-note-id="${n.id}" style="cursor:pointer">
             <div style="display:flex;align-items:start;justify-content:space-between;margin-bottom:8px">
               <div style="display:flex;align-items:center;gap:8px">
-                <span style="width:10px;height:10px;border-radius:50%;background:${n.color || '#2563eb'};flex-shrink:0"></span>
+                <span style="width:10px;height:10px;border-radius:50%;background:${NODE_RED};flex-shrink:0"></span>
                 <div style="font-weight:700;font-size:15px">${escape(n.title)}</div>
               </div>
               <span style="font-size:11px;color:var(--text-3)">${new Date(n.updated_at).toLocaleDateString('fr-FR')}</span>
@@ -94,72 +116,40 @@ function drawList(notes, allNotes) {
     </div>`
 }
 
-function drawGraph(notes, allNotes) {
+function drawGraphHTML(notes, allNotes) {
   if (!notes.length && !allNotes.length) return '<div class="empty">Aucune note. Cliquez sur "Nouvelle note" pour commencer.</div>'
 
   const links = []
   const noteMap = new Map(allNotes.map((n) => [n.title.toLowerCase(), n]))
+  const filteredIds = new Set(notes.map((n) => n.id))
   notes.forEach((n) => {
     const refs = extractLinks(n.content)
     refs.forEach((ref) => {
       const target = noteMap.get(ref.toLowerCase())
-      if (target) links.push({ source: n.id, target: target.id, sourceTitle: n.title, targetTitle: target.title })
+      if (target && filteredIds.has(target.id)) {
+        links.push({ source: n.id, target: target.id })
+      }
     })
   })
 
-  const w = 800, h = 500
-  const cx = w / 2, cy = h / 2
-  const nodes = notes.map((n, i) => {
-    const angle = (i / notes.length) * 2 * Math.PI
-    const radius = notes.length <= 2 ? 80 : notes.length <= 5 ? 130 : notes.length <= 10 ? 180 : 200
-    return {
-      id: n.id,
-      title: n.title,
-      color: n.color || '#2563eb',
-      x: cx + Math.cos(angle) * radius,
-      y: cy + Math.sin(angle) * radius,
-      linkCount: links.filter((l) => l.source === n.id || l.target === n.id).length,
-    }
-  })
-
-  const nodeMap = new Map(nodes.map((n) => [n.id, n]))
-  const validLinks = links.filter((l) => nodeMap.has(l.source) && nodeMap.has(l.target))
-
   return `
-    <div class="card" style="overflow:hidden;padding:0">
+    <div class="card brain-graph-card" style="overflow:hidden;padding:0">
       <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
         <div style="font-weight:600;font-size:14px">Graphe des connaissances</div>
-        <div style="font-size:12px;color:var(--text-3)">${nodes.length} noeuds · ${validLinks.length} liens</div>
+        <div style="display:flex;gap:12px;align-items:center">
+          <span style="font-size:12px;color:var(--text-3)" id="brain-graph-stats">${notes.length} noeuds · ${links.length} liens</span>
+          <button class="btn btn-sm btn-ghost" id="brain-reset" title="Repositionner">${Icon.refresh(13)} Réorganiser</button>
+        </div>
       </div>
-      <div class="brain-graph-wrap">
-        <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:500px;cursor:default">
-          <defs>
-            <marker id="arrow-brain" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-              <path d="M0,0 L6,3 L0,6 Z" fill="var(--text-3)" opacity=".4"/>
-            </marker>
-          </defs>
-          ${validLinks.map((l) => {
-            const s = nodeMap.get(l.source)
-            const t = nodeMap.get(l.target)
-            const mx = (s.x + t.x) / 2, my = (s.y + t.y) / 2
-            const dx = t.x - s.x, dy = t.y - s.y
-            const dist = Math.sqrt(dx * dx + dy * dy) || 1
-            const offset = 28
-            const ex = t.x - (dx / dist) * offset
-            const ey = t.y - (dy / dist) * offset
-            return `<line x1="${s.x}" y1="${s.y}" x2="${ex}" y2="${ey}" stroke="var(--border-strong)" stroke-width="1.5" opacity=".5" marker-end="url(#arrow-brain)"/>`
-          }).join('')}
-          ${nodes.map((n) => {
-            const r = 18 + Math.min(n.linkCount * 3, 12)
-            return `
-              <g class="brain-node" data-note-id="${n.id}" style="cursor:pointer">
-                <circle cx="${n.x}" cy="${n.y}" r="${r + 4}" fill="${n.color}" opacity=".12"/>
-                <circle cx="${n.x}" cy="${n.y}" r="${r}" fill="${n.color}" opacity=".85" stroke="${n.color}" stroke-width="2"/>
-                <text x="${n.x}" y="${n.y + 1}" text-anchor="middle" dominant-baseline="middle" font-size="9" font-weight="700" fill="#fff" pointer-events="none">${escape(n.title.slice(0, 10))}</text>
-                ${n.linkCount > 0 ? `<text x="${n.x + r - 2}" y="${n.y - r + 2}" text-anchor="middle" font-size="8" fill="var(--text-3)" pointer-events="none">${n.linkCount}</text>` : ''}
-              </g>`
-          }).join('')}
+      <div class="brain-graph-wrap" id="brain-graph-wrap">
+        <svg id="brain-svg" preserveAspectRatio="xMidYMid meet" style="width:100%;height:560px;display:block">
+          <g id="brain-links-group"></g>
+          <g id="brain-nodes-group"></g>
         </svg>
+        <div class="brain-graph-legend">
+          <div style="display:flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:50%;background:${NODE_RED}"></span> Note</div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="width:18px;height:2px;background:${LINK_BLUE}"></span> Lien</div>
+        </div>
       </div>
     </div>
 
@@ -167,12 +157,259 @@ function drawGraph(notes, allNotes) {
       <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text-2)">Toutes les notes</div>
       <div class="brain-chips">
         ${notes.map((n) => `
-          <button class="brain-chip" data-note-id="${n.id}" style="--chip-color:${n.color || '#2563eb'}">
-            <span style="width:8px;height:8px;border-radius:50%;background:${n.color || '#2563eb'};flex-shrink:0"></span>
+          <button class="brain-chip" data-note-id="${n.id}" style="--chip-color:${NODE_RED}">
+            <span style="width:8px;height:8px;border-radius:50%;background:${NODE_RED};flex-shrink:0"></span>
             ${escape(n.title)}
           </button>`).join('')}
       </div>
     </div>`
+}
+
+function initSim(content, notes, allNotes) {
+  stopSim()
+  simContent = content
+  simAllNotes = allNotes
+
+  const svg = content.querySelector('#brain-svg')
+  if (!svg) return
+  const wrap = content.querySelector('#brain-graph-wrap')
+  const rect = wrap.getBoundingClientRect()
+  const w = rect.width || 800
+  const h = 560
+
+  const links = []
+  const noteMap = new Map(allNotes.map((n) => [n.title.toLowerCase(), n]))
+  const filteredIds = new Set(notes.map((n) => n.id))
+  notes.forEach((n) => {
+    const refs = extractLinks(n.content)
+    refs.forEach((ref) => {
+      const target = noteMap.get(ref.toLowerCase())
+      if (target && filteredIds.has(target.id)) {
+        links.push({ source: n.id, target: target.id })
+      }
+    })
+  })
+
+  simNodes = notes.map((n, i) => {
+    const angle = (i / Math.max(notes.length, 1)) * 2 * Math.PI
+    const radius = notes.length <= 2 ? 60 : notes.length <= 5 ? 100 : notes.length <= 10 ? 140 : 170
+    return {
+      id: n.id,
+      title: n.title,
+      x: w / 2 + Math.cos(angle) * radius + (Math.random() - 0.5) * 20,
+      y: h / 2 + Math.sin(angle) * radius + (Math.random() - 0.5) * 20,
+      vx: 0,
+      vy: 0,
+      r: 14 + Math.min(links.filter((l) => l.source === n.id || l.target === n.id).length * 2.5, 14),
+      linkCount: links.filter((l) => l.source === n.id || l.target === n.id).length,
+    }
+  })
+
+  simLinks = links
+  simRunning = true
+  startSimLoop(w, h)
+
+  const resetBtn = content.querySelector('#brain-reset')
+  if (resetBtn) resetBtn.onclick = () => {
+    simNodes.forEach((n, i) => {
+      const angle = (i / Math.max(simNodes.length, 1)) * 2 * Math.PI
+      const radius = simNodes.length <= 2 ? 60 : simNodes.length <= 5 ? 100 : 140
+      n.x = w / 2 + Math.cos(angle) * radius
+      n.y = h / 2 + Math.sin(angle) * radius
+      n.vx = 0
+      n.vy = 0
+    })
+    simRunning = true
+    startSimLoop(w, h)
+  }
+
+  svg.addEventListener('pointerdown', onSimPointerDown)
+  window.addEventListener('pointermove', onSimPointerMove)
+  window.addEventListener('pointerup', onSimPointerUp)
+}
+
+function startSimLoop(w, h) {
+  if (simRAF) cancelAnimationFrame(simRAF)
+
+  const cx = w / 2
+  const cy = h / 2
+  const repulsion = 6000
+  const linkStrength = 0.04
+  const centerStrength = 0.015
+  const damping = 0.82
+  const minDist = 20
+
+  function tick() {
+    if (!simRunning) return
+
+    for (let i = 0; i < simNodes.length; i++) {
+      const a = simNodes[i]
+      for (let j = i + 1; j < simNodes.length; j++) {
+        const b = simNodes[j]
+        const dx = a.x - b.x
+        const dy = a.y - b.y
+        let dist = Math.sqrt(dx * dx + dy * dy)
+        if (dist < minDist) dist = minDist
+        const force = repulsion / (dist * dist)
+        const fx = (dx / dist) * force
+        const fy = (dy / dist) * force
+        if (a !== simDragNode) { a.vx += fx; a.vy += fy }
+        if (b !== simDragNode) { b.vx -= fx; b.vy -= fy }
+      }
+    }
+
+    simLinks.forEach((l) => {
+      const a = simNodes.find((n) => n.id === l.source)
+      const b = simNodes.find((n) => n.id === l.target)
+      if (!a || !b) return
+      const dx = b.x - a.x
+      const dy = b.y - a.y
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1
+      const targetDist = 120
+      const force = (dist - targetDist) * linkStrength
+      const fx = (dx / dist) * force
+      const fy = (dy / dist) * force
+      if (a !== simDragNode) { a.vx += fx; a.vy += fy }
+      if (b !== simDragNode) { b.vx -= fx; b.vy -= fy }
+    })
+
+    simNodes.forEach((n) => {
+      if (n === simDragNode) { n.vx = 0; n.vy = 0; return }
+      n.vx += (cx - n.x) * centerStrength
+      n.vy += (cy - n.y) * centerStrength
+      n.vx *= damping
+      n.vy *= damping
+      n.x += n.vx
+      n.y += n.vy
+      n.x = Math.max(n.r + 5, Math.min(w - n.r - 5, n.x))
+      n.y = Math.max(n.r + 5, Math.min(h - n.r - 5, n.y))
+    })
+
+    let totalVel = 0
+    simNodes.forEach((n) => { totalVel += Math.abs(n.vx) + Math.abs(n.vy) })
+
+    renderSimSVG()
+
+    if (totalVel < 0.5 && !simDragNode) {
+      simRunning = false
+      return
+    }
+
+    simRAF = requestAnimationFrame(tick)
+  }
+
+  simRAF = requestAnimationFrame(tick)
+}
+
+function renderSimSVG() {
+  if (!simContent) return
+  const svg = simContent.querySelector('#brain-svg')
+  if (!svg) return
+
+  const linksGroup = simContent.querySelector('#brain-links-group')
+  const nodesGroup = simContent.querySelector('#brain-nodes-group')
+  if (!linksGroup || !nodesGroup) return
+
+  const w = svg.clientWidth || 800
+  const h = 560
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`)
+
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+  const bg = isDark ? GRAPH_BG : GRAPH_BG_LIGHT
+
+  linksGroup.innerHTML = simLinks.map((l) => {
+    const a = simNodes.find((n) => n.id === l.source)
+    const b = simNodes.find((n) => n.id === l.target)
+    if (!a || !b) return ''
+    return `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="${LINK_BLUE}" stroke-width="1.5" opacity=".55"/>`
+  }).join('')
+
+  nodesGroup.innerHTML = simNodes.map((n) => {
+    const r = n.r
+    return `
+      <g class="brain-node" data-note-id="${n.id}" style="cursor:grab" transform="translate(${n.x},${n.y})">
+        <circle r="${r + 6}" fill="${NODE_RED}" opacity=".1"/>
+        <circle r="${r}" fill="${NODE_RED}" opacity=".9" stroke="${NODE_RED}" stroke-width="2"/>
+        <text y="2" text-anchor="middle" dominant-baseline="middle" font-size="8" font-weight="700" fill="#fff" pointer-events="none">${escape(n.title.slice(0, 8))}</text>
+        ${n.linkCount > 0 ? `<text x="${r - 1}" y="${-r + 3}" text-anchor="middle" font-size="7" fill="#fff" pointer-events="none" font-weight="600">${n.linkCount}</text>` : ''}
+      </g>`
+  }).join('')
+
+  nodesGroup.querySelectorAll('[data-note-id]').forEach((el) => {
+    el.onclick = (e) => {
+      if (simDragNode) return
+      e.stopPropagation()
+      const note = simAllNotes.find((n) => n.id === el.dataset.noteId)
+      if (note) openNoteDetail(simContent, simAllNotes, note)
+    }
+  })
+
+  const wrap = simContent.querySelector('#brain-graph-wrap')
+  if (wrap) wrap.style.background = bg
+}
+
+function onSimPointerDown(e) {
+  if (!simContent) return
+  const svg = simContent.querySelector('#brain-svg')
+  if (!svg) return
+  const pt = svg.createSVGPoint()
+  pt.x = e.clientX
+  pt.y = e.clientY
+  const ctm = svg.getScreenCTM()
+  if (!ctm) return
+  const local = pt.matrixTransform(ctm.inverse())
+
+  let closest = null
+  let closestDist = Infinity
+  simNodes.forEach((n) => {
+    const d = Math.sqrt((n.x - local.x) ** 2 + (n.y - local.y) ** 2)
+    if (d < n.r + 8 && d < closestDist) {
+      closest = n
+      closestDist = d
+    }
+  })
+
+  if (closest) {
+    simDragNode = closest
+    simDragOffset = { x: local.x - closest.x, y: local.y - closest.y }
+    simRunning = true
+    startSimLoop(svg.clientWidth || 800, 560)
+    e.preventDefault()
+  }
+}
+
+function onSimPointerMove(e) {
+  if (!simDragNode || !simContent) return
+  const svg = simContent.querySelector('#brain-svg')
+  if (!svg) return
+  const pt = svg.createSVGPoint()
+  pt.x = e.clientX
+  pt.y = e.clientY
+  const ctm = svg.getScreenCTM()
+  if (!ctm) return
+  const local = pt.matrixTransform(ctm.inverse())
+  simDragNode.x = local.x - simDragOffset.x
+  simDragNode.y = local.y - simDragOffset.y
+  simDragNode.vx = 0
+  simDragNode.vy = 0
+}
+
+function onSimPointerUp() {
+  if (simDragNode) {
+    simDragNode = null
+    simRunning = true
+    const svg = simContent?.querySelector('#brain-svg')
+    startSimLoop(svg?.clientWidth || 800, 560)
+  }
+}
+
+function stopSim() {
+  simRunning = false
+  if (simRAF) { cancelAnimationFrame(simRAF); simRAF = null }
+  window.removeEventListener('pointermove', onSimPointerMove)
+  window.removeEventListener('pointerup', onSimPointerUp)
+  simDragNode = null
+  simContent = null
 }
 
 function openNoteDetail(content, notes, note) {
@@ -192,8 +429,8 @@ function openNoteDetail(content, notes, note) {
           <div style="font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:8px">Notes liées (${linkedNotes.length})</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             ${linkedNotes.map((ln) => `
-              <button class="brain-chip" data-note-id="${ln.id}" style="--chip-color:${ln.color || '#2563eb'}">
-                <span style="width:8px;height:8px;border-radius:50%;background:${ln.color || '#2563eb'};flex-shrink:0"></span>
+              <button class="brain-chip" data-note-id="${ln.id}" style="--chip-color:${NODE_RED}">
+                <span style="width:8px;height:8px;border-radius:50%;background:${NODE_RED};flex-shrink:0"></span>
                 ${escape(ln.title)}
               </button>`).join('')}
           </div>
@@ -225,7 +462,6 @@ function openNoteDetail(content, notes, note) {
 
 function openNoteForm(content, notes, existing) {
   const isEdit = !!existing
-  const allTags = extractAllTags(notes)
   const existingTags = (existing?.tags || []).join(', ')
 
   modal(isEdit ? 'Modifier la note' : 'Nouvelle note', (body) => {
