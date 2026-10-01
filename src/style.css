@@ -705,3 +705,46 @@ a { color: inherit; text-decoration: none; }
   .ideas-col { max-width: none; }
 }
 
+/* ===== Brain / Knowledge Graph ===== */
+.brain-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.brain-card { padding: 16px; transition: box-shadow .15s, border-color .15s; }
+.brain-card:hover { box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+
+.brain-mini-tag { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 999px; background: var(--surface-2); color: var(--text-3); }
+.brain-tag-chip {
+  font-size: 12px; font-weight: 500; padding: 5px 12px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text-3);
+  cursor: pointer; transition: all .15s;
+}
+.brain-tag-chip:hover { border-color: var(--primary); color: var(--primary); }
+.brain-tag-chip.active { background: var(--primary); color: var(--primary-contrast); border-color: var(--primary); }
+
+.brain-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.brain-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--text-2); font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all .15s;
+}
+.brain-chip:hover { border-color: var(--chip-color, var(--primary)); background: color-mix(in srgb, var(--chip-color, var(--primary)) 8%, transparent); }
+
+.brain-graph-wrap { position: relative; overflow: hidden; }
+.brain-node circle { transition: opacity .2s, r .2s; }
+.brain-node:hover circle:first-child { opacity: .25; }
+.brain-node:hover circle:nth-child(2) { opacity: 1; }
+
+.brain-note-content { font-size: 14px; line-height: 1.7; color: var(--text-2); }
+.brain-wikilink {
+  color: var(--primary); font-weight: 600; cursor: pointer;
+  border-bottom: 1px dashed var(--primary); transition: background .15s;
+  padding: 0 2px; border-radius: 2px;
+}
+.brain-wikilink:hover { background: var(--primary-soft); }
+.brain-wikilink-missing {
+  color: var(--text-3); border-bottom: 1px dashed var(--text-3);
+  cursor: pointer; padding: 0 2px; border-radius: 2px; opacity: .7;
+}
+.brain-wikilink-missing:hover { opacity: 1; color: var(--warning); border-color: var(--warning); }
+.brain-inline-tag { color: var(--accent); font-weight: 500; font-size: 12px; }
+

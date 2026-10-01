@@ -23,6 +23,7 @@ import { renderEvents } from './views/events.js'
 import { renderReports } from './views/reports.js'
 import { renderAnalytics } from './views/analytics.js'
 import { renderIdeas } from './views/ideas.js'
+import { renderBrain } from './views/brain.js'
 import { renderHR } from './views/hr.js'
 import { renderAutomations } from './views/automations.js'
 import { getRecentActivity, timeAgo } from './activity.js'
@@ -43,6 +44,7 @@ const NAV = [
     { id: 'invoices', label: 'Facturation', icon: Icon.file(18) },
     { id: 'finance', label: 'Finance', icon: Icon.finance(18) },
     { id: 'ideas', label: 'Idées', icon: Icon.briefcase(18) },
+    { id: 'brain', label: 'Cerveau', icon: Icon.brain(18) },
   ]},
   { section: 'Collaboration', items: [
     { id: 'team', label: 'Équipe', icon: Icon.team(18) },
@@ -83,6 +85,7 @@ const VIEWS = {
   reports: renderReports,
   analytics: renderAnalytics,
   ideas: renderIdeas,
+  brain: renderBrain,
   clients: renderClients,
   crm: renderCRM,
   finance: renderFinance,
