@@ -15,6 +15,8 @@ let simDragNode = null
 let simDragOffset = { x: 0, y: 0 }
 let simContent = null
 let simAllNotes = []
+let simPointerStart = null
+let simDragMoved = false
 
 const NODE_RED = '#e8392e'
 const LINK_BLUE = '#3b5bdb'
@@ -233,11 +235,11 @@ function startSimLoop(w, h) {
 
   const cx = w / 2
   const cy = h / 2
-  const repulsion = 6000
-  const linkStrength = 0.04
-  const centerStrength = 0.015
-  const damping = 0.82
-  const minDist = 20
+  const repulsion = 12000
+  const linkStrength = 0.02
+  const centerStrength = 0.008
+  const damping = 0.92
+  const minDist = 30
 
   function tick() {
     if (!simRunning) return
@@ -290,7 +292,7 @@ function startSimLoop(w, h) {
 
     renderSimSVG()
 
-    if (totalVel < 0.5 && !simDragNode) {
+    if (totalVel < 0.3 && !simDragNode) {
       simRunning = false
       return
     }
@@ -335,15 +337,6 @@ function renderSimSVG() {
       </g>`
   }).join('')
 
-  nodesGroup.querySelectorAll('[data-note-id]').forEach((el) => {
-    el.onclick = (e) => {
-      if (simDragNode) return
-      e.stopPropagation()
-      const note = simAllNotes.find((n) => n.id === el.dataset.noteId)
-      if (note) openNoteDetail(simContent, simAllNotes, note)
-    }
-  })
-
   const wrap = simContent.querySelector('#brain-graph-wrap')
   if (wrap) wrap.style.background = bg
 }
@@ -358,6 +351,9 @@ function onSimPointerDown(e) {
   const ctm = svg.getScreenCTM()
   if (!ctm) return
   const local = pt.matrixTransform(ctm.inverse())
+
+  simPointerStart = { x: e.clientX, y: e.clientY }
+  simDragMoved = false
 
   let closest = null
   let closestDist = Infinity
@@ -380,6 +376,11 @@ function onSimPointerDown(e) {
 
 function onSimPointerMove(e) {
   if (!simDragNode || !simContent) return
+  if (simPointerStart) {
+    const dx = e.clientX - simPointerStart.x
+    const dy = e.clientY - simPointerStart.y
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) simDragMoved = true
+  }
   const svg = simContent.querySelector('#brain-svg')
   if (!svg) return
   const pt = svg.createSVGPoint()
@@ -394,9 +395,18 @@ function onSimPointerMove(e) {
   simDragNode.vy = 0
 }
 
-function onSimPointerUp() {
+function onSimPointerUp(e) {
   if (simDragNode) {
+    const clickedNode = simDragNode
+    const wasDrag = simDragMoved
     simDragNode = null
+    simPointerStart = null
+    simDragMoved = false
+    if (!wasDrag) {
+      const note = simAllNotes.find((n) => n.id === clickedNode.id)
+      if (note) openNoteDetail(simContent, simAllNotes, note)
+      return
+    }
     simRunning = true
     const svg = simContent?.querySelector('#brain-svg')
     startSimLoop(svg?.clientWidth || 800, 560)

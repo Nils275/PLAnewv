@@ -24,6 +24,8 @@ import { renderReports } from './views/reports.js'
 import { renderAnalytics } from './views/analytics.js'
 import { renderIdeas } from './views/ideas.js'
 import { renderBrain } from './views/brain.js'
+import { renderHubSpot } from './views/hubspot.js'
+import { renderAgents } from './views/agents.js'
 import { renderHR } from './views/hr.js'
 import { renderAutomations } from './views/automations.js'
 import { getRecentActivity, timeAgo } from './activity.js'
@@ -45,6 +47,10 @@ const NAV = [
     { id: 'finance', label: 'Finance', icon: Icon.finance(18) },
     { id: 'ideas', label: 'Idées', icon: Icon.briefcase(18) },
     { id: 'brain', label: 'Cerveau', icon: Icon.brain(18) },
+    { id: 'hubspot', label: 'HubSpot CRM', icon: Icon.crm(18) },
+  ]},
+  { section: 'Intelligence', items: [
+    { id: 'agents', label: 'Agents IA', icon: Icon.sparkles(18) },
   ]},
   { section: 'Collaboration', items: [
     { id: 'team', label: 'Équipe', icon: Icon.team(18) },
@@ -86,6 +92,8 @@ const VIEWS = {
   analytics: renderAnalytics,
   ideas: renderIdeas,
   brain: renderBrain,
+  hubspot: renderHubSpot,
+  agents: renderAgents,
   clients: renderClients,
   crm: renderCRM,
   finance: renderFinance,
