@@ -47,4 +47,5 @@ export const Icon = {
   link: (s) => svg(`<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>`, { size: s }),
   brain: (s) => svg(`<path d="M12 5a3 3 0 0 0-3 3 3 3 0 0 0-3 3 3 3 0 0 0 1 2.2V16a3 3 0 0 0 5 2 3 3 0 0 0 5-2v-2.8a3 3 0 0 0 1-2.2 3 3 0 0 0-3-3 3 3 0 0 0-3-3z"/><path d="M12 5v14"/>`, { size: s }),
   refresh: (s) => svg(`<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>`, { size: s }),
+  map: (s) => svg(`<polygon points="1 6 1 22 8 18 16 22 16 6 8 2 1 6"/><polyline points="8 2 8 18"/><polyline points="16 6 16 22"/>`, { size: s }),
 }

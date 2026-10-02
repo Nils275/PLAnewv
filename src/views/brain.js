@@ -20,8 +20,7 @@ let simDragMoved = false
 
 const NODE_RED = '#e8392e'
 const LINK_BLUE = '#3b5bdb'
-const GRAPH_BG = '#1a1b26'
-const GRAPH_BG_LIGHT = '#f5f5fa'
+const GRAPH_BG = '#0d0e14'
 
 export async function renderBrain(content) {
   content.innerHTML = `<div class="spinner"></div>`
@@ -316,8 +315,7 @@ function renderSimSVG() {
   const h = 560
   svg.setAttribute('viewBox', `0 0 ${w} ${h}`)
 
-  const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
-  const bg = isDark ? GRAPH_BG : GRAPH_BG_LIGHT
+  const bg = GRAPH_BG
 
   linksGroup.innerHTML = simLinks.map((l) => {
     const a = simNodes.find((n) => n.id === l.source)
@@ -458,16 +456,31 @@ function openNoteDetail(content, notes, note) {
     }
   })
 
-  const editBtn = document.createElement('button')
-  editBtn.className = 'btn btn-sm btn-ghost'
-  editBtn.style.cssText = 'position:absolute;top:14px;right:48px'
-  editBtn.innerHTML = Icon.edit(14)
-  editBtn.onclick = () => {
-    document.querySelector('.modal-overlay')?.remove()
-    openNoteForm(content, notes, note)
-  }
   const modalEl = document.querySelector('.modal')
-  if (modalEl) modalEl.appendChild(editBtn)
+  if (modalEl) {
+    const editBtn = document.createElement('button')
+    editBtn.className = 'btn btn-sm btn-ghost'
+    editBtn.style.cssText = 'position:absolute;top:14px;right:48px'
+    editBtn.innerHTML = Icon.edit(14)
+    editBtn.onclick = () => {
+      document.querySelector('.modal-overlay')?.remove()
+      openNoteForm(content, notes, note)
+    }
+    modalEl.appendChild(editBtn)
+
+    const delBtn = document.createElement('button')
+    delBtn.className = 'btn btn-sm btn-ghost btn-danger'
+    delBtn.style.cssText = 'position:absolute;top:14px;right:14px'
+    delBtn.innerHTML = Icon.trash(14)
+    delBtn.onclick = async () => {
+      if (!await confirmDialog('Supprimer cette note ?')) return
+      await supabase.from('brain_notes').delete().eq('id', note.id)
+      toast('Note supprimée', 'success')
+      document.querySelector('.modal-overlay')?.remove()
+      renderBrain(content)
+    }
+    modalEl.appendChild(delBtn)
+  }
 }
 
 function openNoteForm(content, notes, existing) {

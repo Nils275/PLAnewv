@@ -26,6 +26,7 @@ import { renderIdeas } from './views/ideas.js'
 import { renderBrain } from './views/brain.js'
 import { renderHubSpot } from './views/hubspot.js'
 import { renderAgents } from './views/agents.js'
+import { renderProspects } from './views/prospects.js'
 import { renderHR } from './views/hr.js'
 import { renderAutomations } from './views/automations.js'
 import { getRecentActivity, timeAgo } from './activity.js'
@@ -51,6 +52,7 @@ const NAV = [
   ]},
   { section: 'Intelligence', items: [
     { id: 'agents', label: 'Agents IA', icon: Icon.sparkles(18) },
+    { id: 'prospects', label: 'Recherche prospects', icon: Icon.map(18) },
   ]},
   { section: 'Collaboration', items: [
     { id: 'team', label: 'Équipe', icon: Icon.team(18) },
@@ -94,6 +96,7 @@ const VIEWS = {
   brain: renderBrain,
   hubspot: renderHubSpot,
   agents: renderAgents,
+  prospects: renderProspects,
   clients: renderClients,
   crm: renderCRM,
   finance: renderFinance,
